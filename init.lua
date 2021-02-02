@@ -1,3 +1,26 @@
+--- Collects values returned by calls to `fn` on each `(k, v)` pair in `t`.
+-- The `fn` function will be called for each `(k, v)` pair in `t` and any of its
+-- sub-table values recursively. Values returned by all the calls to `fn` are
+-- collected in an array-like table and returned by this function.
+-- @return an array (table) value
+local function rmap(t, fn)
+    local res = {}
+
+    if t then
+        for k, v in pairs(t) do
+            if type(v) == "table" then
+                for _, vv in ipairs(rmap(v, fn)) do
+                    res[#res + 1] = vv
+                end
+            else
+                res[#res + 1] = fn(k, v)
+            end
+        end
+    end
+
+    return res
+end
+
 local function ns(...)
     local varname = "EPINE_CC"
 
