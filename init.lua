@@ -131,8 +131,8 @@ function CC:target(name)
                 targets = {name},
                 prerequisites = {vref(vobjs)},
                 recipe = {
-                    link_cmd[cfg.type or "binary"],
-                    self.onlink("$@")
+                    self.onlink("$@"),
+                    link_cmd[cfg.type or "binary"]
                 }
             }
         }
@@ -145,11 +145,11 @@ function CC:target(name)
                     target_pattern = "%.o",
                     prereq_patterns = {"%.c"},
                     recipe = {
+                        self.oncompile("$<", "$@"),
                         mq(
                             "$(CC) " ..
                                 vref(vcppflags, vcflags) .. " -c -o $@ $<"
-                        ),
-                        self.oncompile("$<", "$@")
+                        )
                     }
                 }
             }
@@ -160,11 +160,11 @@ function CC:target(name)
                     target_pattern = "%.o",
                     prereq_patterns = {"%.cpp"},
                     recipe = {
+                        self.oncompile("$<", "$@"),
                         mq(
                             "$(CXX) " ..
                                 vref(vcppflags, vcxxflags) .. " -c -o $@ $<"
-                        ),
-                        self.oncompile("$<", "$@")
+                        )
                     }
                 }
             }
