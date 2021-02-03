@@ -1,34 +1,26 @@
---- Collects values returned by calls to `fn` on each `(k, v)` pair in `t`.
--- The `fn` function will be called for each `(k, v)` pair in `t` and any of its
--- sub-table values recursively. Values returned by all the calls to `fn` are
--- collected in an array-like table and returned by this function.
--- @return an array (table) value
-local function rmap(t, fn)
-    local res = {}
-
-    if t then
-        for k, v in pairs(t) do
-            if type(v) == "table" then
-                for _, vv in ipairs(rmap(v, fn)) do
-                    res[#res + 1] = vv
-                end
-            else
-                res[#res + 1] = fn(k, v)
-            end
-        end
-    end
-
-    return res
-end
-
-local function ns(...)
-    local varname = "EPINE_CC"
+local function ns(tl, ...)
+    local varname = string.gsub(tl, "[^%w]", "_")
 
     for _, v in ipairs({...}) do
         varname = varname .. "_" .. string.gsub(v, "[^%w]", "_")
     end
 
     return varname
+end
+
+local function multivar(def, varname, t)
+    local mk = {
+        def(varname, t[1] or "")
+    }
+
+    for i = 2, #t do
+        mk[i] = epine.append(varname, fconcat({t[i]}))
+    end
+
+    return mk
+end
+
+local function nop()
 end
 
 ---
@@ -43,11 +35,10 @@ setmetatable(CC, CC.mt)
 function CC.mt.__call(_)
     local self = setmetatable({}, CC)
 
+    self.quiet = false
+    self.oncompile = nop
+    self.onlink = nop
     self.cleanlist = {}
-    self.cflags = {}
-    self.incdirs = {}
-    self.libs = {}
-    self.libdirs = {}
 
     return self
 end
@@ -55,100 +46,133 @@ end
 function CC:target(name)
     return function(cfg)
         assert(cfg.srcs and #cfg.srcs > 0, '"srcs" must be an array')
+        cfg.lang = cfg.lang or "C"
+        cfg.cppflags = cfg.cppflags or {}
+        cfg.cflags = cfg.cflags or {}
+        cfg.cxxflags = cfg.cxxflags or {}
+        cfg.ldlibs = cfg.ldlibs or {}
+        cfg.ldflags = cfg.ldflags or {}
 
-        -- variables used by the target
-        local vsrcs = ns(name, "SRCS") --<< source files
-        local vobjs = ns(name, "OBJS") --<< object files
-        local vcflags = ns(name, "CFLAGS") --<< compiler flags
-        local vldlibs = ns(name, "LDLIBS") --<< linker libs (-l..., not -L...)
-        local vldflags = ns(name, "LDFLAGS") --<< linker flags (including -L...)
+        local vcppflags = ns(name, "CPPFLAGS") -- preprocessor flags
+        local vcflags = ns(name, "CFLAGS") -- c compiler flags
+        local vcxxflags = ns(name, "CXXFLAGS") -- c++ compiler flags
+        local vldlibs = ns(name, "LDLIBS") -- linker libs
+        local vldflags = ns(name, "LDFLAGS") -- linker flags
+        local vsrcs = ns(name, "SRCS") -- source files
+        local vobjs = ns(name, "OBJS") -- object files
 
-        -- add object files to the clean list
-        self.cleanlist[#self.cleanlist + 1] = vref(vobjs)
+        -- makefile
+        local mk = {}
 
-        -- build the target configuration variables
-        local srcs = fconcat(cfg.srcs)
-        local cflags = fconcat(self.cflags) .. fconcat(self.incdirs, "-I")
-        local ldlibs = fconcat(self.libs, "-l")
-        local ldflags = fconcat(self.libdirs, "-L")
+        -- initial variables
+        mk[#mk + 1] = {
+            multivar(epine.svar, vcppflags, cfg.cppflags),
+            multivar(epine.svar, vldlibs, cfg.ldlibs),
+            multivar(epine.svar, vldflags, cfg.ldflags),
+            epine.svar(vsrcs, fconcat(cfg.srcs))
+        }
 
-        return {
-            -- base configuration
-            epine.svar(vsrcs, srcs),
-            epine.svar(vcflags, cflags),
-            epine.svar(vldlibs, ldlibs),
-            epine.svar(vldflags, ldflags),
-            epine.svar(vobjs, "$(" .. vsrcs .. ":.c=.o)"),
-            -- target-specific configuration
-            epine.static_if(cfg.cflags) {
-                epine.append(vcflags, fconcat(cfg.cflags))
-            },
-            epine.static_if(cfg.incdirs) {
-                epine.append(vcflags, fconcat(cfg.incdirs, "-I"))
-            },
-            epine.static_if(cfg.defines) {
-                epine.append(
-                    vcflags,
-                    fconcat(
-                        rmap(
-                            cfg.defines,
-                            function(k, v)
-                                if type(k) == "number" then
-                                    return tostring(v)
-                                else
-                                    return tostring(k) .. "=" .. tostring(v)
-                                end
-                            end
-                        ),
-                        "-D"
-                    )
-                )
-            },
-            epine.static_if(cfg.libs) {
-                epine.append(vldlibs, fconcat(cfg.libs, "-l"))
-            },
-            epine.static_if(cfg.libdirs) {
-                epine.append(vldflags, fconcat(cfg.libdirs, "-L"))
-            },
-            -- target-specific prerequisites (maybe a static library?)
-            epine.static_if(cfg.prerequisites) {
+        -- object files depend on the language!
+        if cfg.lang == "C" then
+            mk[#mk + 1] = {
+                multivar(epine.svar, vcflags, cfg.cflags),
+                epine.svar(vobjs, "$(filter %.c," .. vref(vsrcs) .. ")"),
+                epine.svar(vobjs, "$(" .. vobjs .. ":.c=.o)")
+            }
+        elseif cfg.lang == "C++" then
+            mk[#mk + 1] = {
+                multivar(epine.svar, vcxxflags, cfg.cxxflags),
+                epine.svar(vobjs, "$(filter %.cpp," .. vref(vsrcs) .. ")"),
+                epine.svar(vobjs, "$(" .. vobjs .. ":.cpp=.o)")
+            }
+        else
+            error("unknown language: " .. cfg.lang)
+        end
+
+        -- prerequisites (maybe a library?)
+        if cfg.prerequisites then
+            mk[#mk + 1] = {
                 epine.erule {
                     targets = {name, vref(vobjs)},
                     prerequisites = cfg.prerequisites
                 }
-            },
-            -- how we build the target
-            epine.static_switch(cfg.type or "binary") {
-                -- binary (default)
-                ["binary"] = {
-                    epine.erule {
-                        targets = {name},
-                        prerequisites = {vref(vobjs)},
-                        recipe = {
-                            "$(CC) -o $@ " .. vref(vobjs, vldlibs, vldflags)
-                        }
-                    }
-                },
-                -- static library
-                ["static"] = "static-lib",
-                ["static-lib"] = {
-                    epine.erule {
-                        targets = {name},
-                        prerequisites = {vref(vobjs)},
-                        recipe = {"$(AR) rc $@ " .. vref(vobjs)}
-                    }
-                }
-            },
-            -- static pattern rule to make object files
-            epine.sprule {
-                targets = {vref(vobjs)},
-                target_pattern = "%.o",
-                prereq_patterns = {"%.c"},
+            }
+        end
+
+        -- maybe quiet
+        local function mq(...)
+            if self.quiet then
+                return quiet(...)
+            else
+                return ...
+            end
+        end
+
+        -- rules
+        local ld
+
+        if cfg.lang == "C" then
+            ld = "$(CC)"
+        elseif cfg.lang == "C++" then
+            ld = "$(CXX)"
+        end
+
+        local link_cmd = {
+            ["binary"] = mq(ld .. " -o $@ " .. vref(vobjs, vldflags, vldlibs)),
+            ["static-lib"] = mq("$(AR) rc $@ " .. vref(vobjs))
+        }
+
+        link_cmd["static"] = link_cmd["static-lib"]
+        link_cmd["shared"] = link_cmd["shared-lib"]
+
+        -- the final target
+        mk[#mk + 1] = {
+            epine.erule {
+                targets = {name},
+                prerequisites = {vref(vobjs)},
                 recipe = {
-                    "$(CC) $(CFLAGS) " .. vref(vcflags) .. " -c -o $@ $<"
+                    link_cmd[cfg.type or "binary"],
+                    self.onlink("$@")
                 }
             }
         }
+
+        -- static pattern rule to make object files
+        if cfg.lang == "C" then
+            mk[#mk + 1] = {
+                epine.sprule {
+                    targets = {vref(vobjs)},
+                    target_pattern = "%.o",
+                    prereq_patterns = {"%.c"},
+                    recipe = {
+                        mq(
+                            "$(CC) " ..
+                                vref(vcppflags, vcflags) .. " -c -o $@ $<"
+                        ),
+                        self.oncompile("$<", "$@")
+                    }
+                }
+            }
+        elseif cfg.lang == "C++" then
+            mk[#mk + 1] = {
+                epine.sprule {
+                    targets = {vref(vobjs)},
+                    target_pattern = "%.o",
+                    prereq_patterns = {"%.cpp"},
+                    recipe = {
+                        mq(
+                            "$(CXX) " ..
+                                vref(vcppflags, vcxxflags) .. " -c -o $@ $<"
+                        ),
+                        self.oncompile("$<", "$@")
+                    }
+                }
+            }
+        end
+
+        self.cleanlist[#self.cleanlist + 1] = vref(vobjs)
+
+        return mk
     end
 end
 
