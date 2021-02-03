@@ -8,13 +8,19 @@ local function ns(tl, ...)
     return varname
 end
 
-local function multivar(def, varname, t)
-    local mk = {
-        def(varname, t[1] or "")
-    }
+local function multivar(def, varname, ...)
+    local mk = {}
+    local first = true
 
-    for i = 2, #t do
-        mk[i] = epine.append(varname, fconcat({t[i]}))
+    for _, v in ipairs({...}) do
+        for _, vv in ipairs(v) do
+            if first then
+                first = false
+                mk[#mk + 1] = def(varname, vv)
+            else
+                mk[#mk + 1] = epine.append(varname, vv)
+            end
+        end
     end
 
     return mk
@@ -52,6 +58,7 @@ function CC:target(name)
         cfg.cxxflags = cfg.cxxflags or {}
         cfg.ldlibs = cfg.ldlibs or {}
         cfg.ldflags = cfg.ldflags or {}
+        cfg.gendeps = cfg.gendeps ~= false
 
         local vcppflags = ns(name, "CPPFLAGS") -- preprocessor flags
         local vcflags = ns(name, "CFLAGS") -- c compiler flags
@@ -60,13 +67,20 @@ function CC:target(name)
         local vldflags = ns(name, "LDFLAGS") -- linker flags
         local vsrcs = ns(name, "SRCS") -- source files
         local vobjs = ns(name, "OBJS") -- object files
+        local vdeps = ns(name, "DEPS") -- make dependencies files (*.d)
 
         -- makefile
         local mk = {}
 
+        if cfg.gendeps then
+            mk[#mk + 1] =
+                multivar(epine.svar, vcppflags, {"-MD -MP"}, cfg.cppflags)
+        else
+            mk[#mk + 1] = multivar(epine.svar, vcppflags, cfg.cppflags)
+        end
+
         -- initial variables
         mk[#mk + 1] = {
-            multivar(epine.svar, vcppflags, cfg.cppflags),
             multivar(epine.svar, vldlibs, cfg.ldlibs),
             multivar(epine.svar, vldflags, cfg.ldflags),
             epine.svar(vsrcs, fconcat(cfg.srcs))
@@ -87,6 +101,10 @@ function CC:target(name)
             }
         else
             error("unknown language: " .. cfg.lang)
+        end
+
+        if cfg.gendeps then
+            mk[#mk + 1] = epine.svar(vdeps, "$(" .. vobjs .. ":.o=.d)")
         end
 
         -- prerequisites (maybe a library?)
@@ -168,6 +186,14 @@ function CC:target(name)
                     }
                 }
             }
+        end
+
+        if cfg.gendeps then
+            mk[#mk + 1] = {
+                epine.sinclude {vref(vdeps)}
+            }
+
+            self.cleanlist[#self.cleanlist + 1] = vref(vdeps)
         end
 
         self.cleanlist[#self.cleanlist + 1] = vref(vobjs)
