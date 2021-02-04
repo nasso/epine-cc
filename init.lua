@@ -74,10 +74,20 @@ function CC:target(name)
         local vdeps = ns(name, "DEPS") -- make dependencies files (*.d)
 
         -- makefile
-        local mk = {
-            -- TARGET_SRCS := ...
-            epine.svar(vsrcs, fconcat(cfg.srcs))
-        }
+        local mk = {}
+
+        -- prerequisites (maybe a library?)
+        if cfg.prerequisites then
+            mk[#mk + 1] = {
+                epine.erule {
+                    targets = {name, vref(vobjs)},
+                    prerequisites = cfg.prerequisites
+                }
+            }
+        end
+
+        -- TARGET_SRCS := ...
+        mk[#mk + 1] = epine.svar(vsrcs, fconcat(cfg.srcs))
 
         -- object files depend on the language!
         -- TARGET_OBJS := ...
@@ -107,6 +117,11 @@ function CC:target(name)
         local vldlibs = "LDLIBS" -- linker libs
         local vldflags = "LDFLAGS" -- linker flags
 
+        -- force initialize them so we can be sure what their value is
+        -- avoids issues where another target was made just before this one
+        -- we don't wanna keep the values of the other target!
+        mk[#mk + 1] = epine.svar(vcppflags):targets(name)
+
         -- CPPFLAGS
         if cfg.gendeps then
             mk[#mk + 1] = targetvars(name, vcppflags, {"-MD -MP"}, cfg.cppflags)
@@ -117,6 +132,7 @@ function CC:target(name)
         -- CFLAGS / CXXFLAGS
         if cfg.lang == "C" then
             mk[#mk + 1] = {
+                epine.svar(vcflags):targets(name),
                 targetvars(
                     name,
                     vcflags,
@@ -126,6 +142,7 @@ function CC:target(name)
             }
         elseif cfg.lang == "C++" then
             mk[#mk + 1] = {
+                epine.svar(vcxxflags):targets(name),
                 targetvars(
                     name,
                     vcxxflags,
@@ -135,24 +152,19 @@ function CC:target(name)
             }
         end
 
-        -- LDLIBS & LDFLAGS
-        mk[#mk + 1] = {
-            targetvars(name, vldlibs, cfg.ldlibs),
-            targetvars(
-                name,
-                vldflags,
-                isshared and "-shared" or {},
-                cfg.ldflags
-            )
-        }
-
-        -- prerequisites (maybe a library?)
-        if cfg.prerequisites then
+        -- static libraries don't link!
+        if cfg.type ~= "static" then
+            -- LDLIBS & LDFLAGS
             mk[#mk + 1] = {
-                epine.erule {
-                    targets = {name, vref(vobjs)},
-                    prerequisites = cfg.prerequisites
-                }
+                epine.svar(vldlibs):targets(name),
+                targetvars(name, vldlibs, cfg.ldlibs),
+                epine.svar(vldflags):targets(name),
+                targetvars(
+                    name,
+                    vldflags,
+                    isshared and "-shared" or {},
+                    cfg.ldflags
+                )
             }
         end
 

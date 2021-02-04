@@ -32,7 +32,7 @@ return {
     cc.binary "unit_tests" {
         prerequisites = {"libmy.a"},
         srcs = {"tests/test.c"},
-        cppflags = {"-Iinclude"},
+        cppflags = {"-Iinclude", "-DMY_TESTS"},
         ldlibs = {"-lmy", "-lcriterion"},
         ldflags = {"-L."}
     },
@@ -48,7 +48,7 @@ return {
     epine.br,
     action "fclean" {
         rm(cc.cleanlist),
-        rm("libmy.a", "unit_tests")
+        rm("libmy.a", "libmy.so", "unit_tests")
     },
     epine.br,
     action "re" {
