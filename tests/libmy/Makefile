@@ -28,6 +28,7 @@ libmy.so: CPPFLAGS += -Iinclude
 libmy.so: CPPFLAGS += -DMY_ALLOW_MALLOC
 libmy.so: CPPFLAGS += -DMY_ALLOW_FREE
 libmy.so: CPPFLAGS += -DMY_FAKE_MALLOC_FAILURE=16
+libmy.so: CFLAGS += -fPIC
 libmy.so: CFLAGS += -Wall
 libmy.so: CFLAGS += -Wextra
 libmy.so: CFLAGS += -pedantic

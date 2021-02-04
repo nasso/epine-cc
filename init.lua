@@ -8,18 +8,16 @@ local function ns(tl, ...)
     return varname
 end
 
-local function targetvars(targets, def, varname, ...)
+local function targetvars(targets, varname, ...)
     local mk = {}
-    local first = false
 
     for _, v in ipairs({...}) do
-        for _, vv in ipairs(v) do
-            if first then
-                first = false
-                mk[#mk + 1] = def(varname, vv):targets(targets)
-            else
+        if type(v) == "table" then
+            for _, vv in ipairs(v) do
                 mk[#mk + 1] = epine.append(varname, vv):targets(targets)
             end
+        else
+            mk[#mk + 1] = epine.append(varname, v):targets(targets)
         end
     end
 
@@ -113,16 +111,9 @@ function CC:target(name)
 
         -- CPPFLAGS
         if cfg.gendeps then
-            mk[#mk + 1] =
-                targetvars(
-                name,
-                epine.svar,
-                vcppflags,
-                {"-MD -MP"},
-                cfg.cppflags
-            )
+            mk[#mk + 1] = targetvars(name, vcppflags, {"-MD -MP"}, cfg.cppflags)
         else
-            mk[#mk + 1] = targetvars(name, epine.svar, vcppflags, cfg.cppflags)
+            mk[#mk + 1] = targetvars(name, vcppflags, cfg.cppflags)
         end
 
         -- CFLAGS / CXXFLAGS
@@ -130,7 +121,6 @@ function CC:target(name)
             mk[#mk + 1] = {
                 targetvars(
                     name,
-                    epine.svar,
                     vcflags,
                     isshared and "-fPIC" or {},
                     cfg.cflags
@@ -140,7 +130,6 @@ function CC:target(name)
             mk[#mk + 1] = {
                 targetvars(
                     name,
-                    epine.svar,
                     vcxxflags,
                     isshared and "-fPIC" or {},
                     cfg.cxxflags
@@ -150,13 +139,12 @@ function CC:target(name)
 
         -- LDLIBS & LDFLAGS
         mk[#mk + 1] = {
-            targetvars(name, epine.svar, vldlibs, cfg.ldlibs),
+            targetvars(name, vldlibs, cfg.ldlibs),
             targetvars(
                 name,
-                epine.svar,
                 vldflags,
-                cfg.ldflags,
-                isshared and {"-shared"} or {}
+                isshared and "-shared" or {},
+                cfg.ldflags
             )
         }
 
