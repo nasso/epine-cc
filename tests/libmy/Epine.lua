@@ -4,9 +4,11 @@ local libmy_cfg = {
     srcs = {"./src/my_putstr.c", "./src/my_printf.c"},
     cppflags = {
         "-Iinclude",
-        "-DMY_ALLOW_MALLOC",
-        "-DMY_ALLOW_FREE",
-        "-DMY_FAKE_MALLOC_FAILURE=16"
+        {
+            "-DMY_ALLOW_MALLOC",
+            "-DMY_ALLOW_FREE",
+            "-DMY_FAKE_MALLOC_FAILURE=16"
+        }
     },
     cflags = {
         "-Wall",

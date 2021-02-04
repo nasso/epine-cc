@@ -13,13 +13,7 @@ local function targetvars(targets, varname, ...)
 
     for _, v in ipairs({...}) do
         if type(v) == "table" then
-            for _, vv in ipairs(v) do
-                local value = fconcat({vv})
-
-                if value ~= "" then
-                    mk[#mk + 1] = epine.append(varname, value):targets(targets)
-                end
-            end
+            mk[#mk + 1] = targetvars(targets, varname, table.unpack(v))
         else
             mk[#mk + 1] = epine.append(varname, v):targets(targets)
         end
