@@ -12,7 +12,8 @@ local libmy_cfg = {
         "-Wall",
         "-Wextra",
         "-pedantic"
-    }
+    },
+    ldlibs = {{}, {}}
 }
 
 return {
