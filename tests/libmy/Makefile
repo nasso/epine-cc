@@ -43,11 +43,11 @@ libmy.so: $(libmy_so_OBJS)
 	$(CC) -o $@ $(libmy_so_OBJS) $(LDFLAGS) $(LDLIBS)
 -include $(libmy_so_DEPS)
 
-unit_tests $(unit_tests_OBJS): libmy.a
 unit_tests_SRCS := tests/test.c
 unit_tests_OBJS := $(filter %.c,$(unit_tests_SRCS))
 unit_tests_OBJS := $(unit_tests_OBJS:.c=.o)
 unit_tests_DEPS := $(unit_tests_OBJS:.o=.d)
+unit_tests $(unit_tests_OBJS): libmy.a
 unit_tests: CPPFLAGS :=
 unit_tests: CPPFLAGS += -MD -MP
 unit_tests: CPPFLAGS += -Iinclude

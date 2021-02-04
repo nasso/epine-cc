@@ -76,16 +76,6 @@ function CC:target(name)
         -- makefile
         local mk = {}
 
-        -- prerequisites (maybe a library?)
-        if cfg.prerequisites then
-            mk[#mk + 1] = {
-                epine.erule {
-                    targets = {name, vref(vobjs)},
-                    prerequisites = cfg.prerequisites
-                }
-            }
-        end
-
         -- TARGET_SRCS := ...
         mk[#mk + 1] = epine.svar(vsrcs, fconcat(cfg.srcs))
 
@@ -108,6 +98,16 @@ function CC:target(name)
         -- TARGET_DEPS := ...
         if cfg.gendeps then
             mk[#mk + 1] = epine.svar(vdeps, "$(" .. vobjs .. ":.o=.d)")
+        end
+
+        -- prerequisites (maybe a library?)
+        if cfg.prerequisites then
+            mk[#mk + 1] = {
+                epine.erule {
+                    targets = {name, vref(vobjs)},
+                    prerequisites = cfg.prerequisites
+                }
+            }
         end
 
         -- target specific variables
