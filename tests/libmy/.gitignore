@@ -2,3 +2,4 @@ unit_tests
 *.a
 *.o
 *.so
+*.d
