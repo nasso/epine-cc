@@ -8,17 +8,17 @@ local function ns(tl, ...)
     return varname
 end
 
-local function multivar(def, varname, ...)
+local function targetvars(targets, def, varname, ...)
     local mk = {}
-    local first = true
+    local first = false
 
     for _, v in ipairs({...}) do
         for _, vv in ipairs(v) do
             if first then
                 first = false
-                mk[#mk + 1] = def(varname, vv)
+                mk[#mk + 1] = def(varname, vv):targets(targets)
             else
-                mk[#mk + 1] = epine.append(varname, vv)
+                mk[#mk + 1] = epine.append(varname, vv):targets(targets)
             end
         end
     end
@@ -28,6 +28,14 @@ end
 
 local function nop()
 end
+
+local normalized_types = {
+    ["binary"] = "binary",
+    ["static"] = "static",
+    ["static-lib"] = "static",
+    ["shared"] = "shared",
+    ["shared-lib"] = "shared"
+}
 
 ---
 
@@ -51,7 +59,6 @@ end
 
 function CC:target(name)
     return function(cfg)
-        assert(cfg.srcs and #cfg.srcs > 0, '"srcs" must be an array')
         cfg.lang = cfg.lang or "C"
         cfg.cppflags = cfg.cppflags or {}
         cfg.cflags = cfg.cflags or {}
@@ -59,43 +66,32 @@ function CC:target(name)
         cfg.ldlibs = cfg.ldlibs or {}
         cfg.ldflags = cfg.ldflags or {}
         cfg.gendeps = cfg.gendeps ~= false
+        cfg.type = normalized_types[cfg.type]
 
-        local vcppflags = ns(name, "CPPFLAGS") -- preprocessor flags
-        local vcflags = ns(name, "CFLAGS") -- c compiler flags
-        local vcxxflags = ns(name, "CXXFLAGS") -- c++ compiler flags
-        local vldlibs = ns(name, "LDLIBS") -- linker libs
-        local vldflags = ns(name, "LDFLAGS") -- linker flags
+        assert(cfg.srcs and #cfg.srcs > 0, '"srcs" must be an array')
+        assert(cfg.type, "invalid target type")
+
+        local isshared = cfg.type == "shared"
+
         local vsrcs = ns(name, "SRCS") -- source files
         local vobjs = ns(name, "OBJS") -- object files
         local vdeps = ns(name, "DEPS") -- make dependencies files (*.d)
 
         -- makefile
-        local mk = {}
-
-        if cfg.gendeps then
-            mk[#mk + 1] =
-                multivar(epine.svar, vcppflags, {"-MD -MP"}, cfg.cppflags)
-        else
-            mk[#mk + 1] = multivar(epine.svar, vcppflags, cfg.cppflags)
-        end
-
-        -- initial variables
-        mk[#mk + 1] = {
-            multivar(epine.svar, vldlibs, cfg.ldlibs),
-            multivar(epine.svar, vldflags, cfg.ldflags),
+        local mk = {
+            -- TARGET_SRCS := ...
             epine.svar(vsrcs, fconcat(cfg.srcs))
         }
 
         -- object files depend on the language!
+        -- TARGET_OBJS := ...
         if cfg.lang == "C" then
             mk[#mk + 1] = {
-                multivar(epine.svar, vcflags, cfg.cflags),
                 epine.svar(vobjs, "$(filter %.c," .. vref(vsrcs) .. ")"),
                 epine.svar(vobjs, "$(" .. vobjs .. ":.c=.o)")
             }
         elseif cfg.lang == "C++" then
             mk[#mk + 1] = {
-                multivar(epine.svar, vcxxflags, cfg.cxxflags),
                 epine.svar(vobjs, "$(filter %.cpp," .. vref(vsrcs) .. ")"),
                 epine.svar(vobjs, "$(" .. vobjs .. ":.cpp=.o)")
             }
@@ -103,9 +99,66 @@ function CC:target(name)
             error("unknown language: " .. cfg.lang)
         end
 
+        -- TARGET_DEPS := ...
         if cfg.gendeps then
             mk[#mk + 1] = epine.svar(vdeps, "$(" .. vobjs .. ":.o=.d)")
         end
+
+        -- target specific variables
+        local vcppflags = "CPPFLAGS" -- preprocessor flags
+        local vcflags = "CFLAGS" -- c compiler flags
+        local vcxxflags = "CXXFLAGS" -- c++ compiler flags
+        local vldlibs = "LDLIBS" -- linker libs
+        local vldflags = "LDFLAGS" -- linker flags
+
+        -- CPPFLAGS
+        if cfg.gendeps then
+            mk[#mk + 1] =
+                targetvars(
+                name,
+                epine.svar,
+                vcppflags,
+                {"-MD -MP"},
+                cfg.cppflags
+            )
+        else
+            mk[#mk + 1] = targetvars(name, epine.svar, vcppflags, cfg.cppflags)
+        end
+
+        -- CFLAGS / CXXFLAGS
+        if cfg.lang == "C" then
+            mk[#mk + 1] = {
+                targetvars(
+                    name,
+                    epine.svar,
+                    vcflags,
+                    isshared and "-fPIC" or {},
+                    cfg.cflags
+                )
+            }
+        elseif cfg.lang == "C++" then
+            mk[#mk + 1] = {
+                targetvars(
+                    name,
+                    epine.svar,
+                    vcxxflags,
+                    isshared and "-fPIC" or {},
+                    cfg.cxxflags
+                )
+            }
+        end
+
+        -- LDLIBS & LDFLAGS
+        mk[#mk + 1] = {
+            targetvars(name, epine.svar, vldlibs, cfg.ldlibs),
+            targetvars(
+                name,
+                epine.svar,
+                vldflags,
+                cfg.ldflags,
+                isshared and {"-shared"} or {}
+            )
+        }
 
         -- prerequisites (maybe a library?)
         if cfg.prerequisites then
@@ -137,11 +190,9 @@ function CC:target(name)
 
         local link_cmd = {
             ["binary"] = mq(ld .. " -o $@ " .. vref(vobjs, vldflags, vldlibs)),
-            ["static-lib"] = mq("$(AR) rc $@ " .. vref(vobjs))
+            ["shared"] = mq(ld .. " -o $@ " .. vref(vobjs, vldflags, vldlibs)),
+            ["static"] = mq("$(AR) rc $@ " .. vref(vobjs))
         }
-
-        link_cmd["static"] = link_cmd["static-lib"]
-        link_cmd["shared"] = link_cmd["shared-lib"]
 
         -- the final target
         mk[#mk + 1] = {
@@ -149,53 +200,23 @@ function CC:target(name)
                 targets = {name},
                 prerequisites = {vref(vobjs)},
                 recipe = {
-                    self.onlink("$@"),
+                    self.onlink("$@") or {},
                     link_cmd[cfg.type or "binary"]
                 }
             }
         }
 
-        -- static pattern rule to make object files
-        if cfg.lang == "C" then
-            mk[#mk + 1] = {
-                epine.sprule {
-                    targets = {vref(vobjs)},
-                    target_pattern = "%.o",
-                    prereq_patterns = {"%.c"},
-                    recipe = {
-                        self.oncompile("$<", "$@"),
-                        mq(
-                            "$(CC) " ..
-                                vref(vcppflags, vcflags) .. " -c -o $@ $<"
-                        )
-                    }
-                }
-            }
-        elseif cfg.lang == "C++" then
-            mk[#mk + 1] = {
-                epine.sprule {
-                    targets = {vref(vobjs)},
-                    target_pattern = "%.o",
-                    prereq_patterns = {"%.cpp"},
-                    recipe = {
-                        self.oncompile("$<", "$@"),
-                        mq(
-                            "$(CXX) " ..
-                                vref(vcppflags, vcxxflags) .. " -c -o $@ $<"
-                        )
-                    }
-                }
-            }
-        end
-
+        -- include for header dependencies
         if cfg.gendeps then
             mk[#mk + 1] = {
                 epine.sinclude {vref(vdeps)}
             }
 
+            -- add *.d files to the cleanlist
             self.cleanlist[#self.cleanlist + 1] = vref(vdeps)
         end
 
+        -- add object files (*.o) to the cleanlist
         self.cleanlist[#self.cleanlist + 1] = vref(vobjs)
 
         return mk
@@ -205,7 +226,15 @@ end
 --< shortcut for static library targets >--
 function CC:static(name)
     return function(cfg)
-        cfg.type = "static-lib"
+        cfg.type = "static"
+        return self:target(name)(cfg)
+    end
+end
+
+--< shortcut for shared library targets >--
+function CC:shared(name)
+    return function(cfg)
+        cfg.type = "shared"
         return self:target(name)(cfg)
     end
 end
@@ -224,6 +253,11 @@ local cc = CC()
 --< forward CC:binary >--
 function cc.binary(...)
     return CC.binary(cc, ...)
+end
+
+--< forward CC:shared >--
+function cc.shared(...)
+    return CC.shared(cc, ...)
 end
 
 --< forward CC:static >--
