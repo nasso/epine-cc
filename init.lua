@@ -198,7 +198,7 @@ function CC:target(name)
                 targets = {name},
                 prerequisites = {vref(vobjs)},
                 recipe = {
-                    self.onlink("$@") or {},
+                    self.onlink("$@", "$^", cfg.type) or {},
                     link_cmd[cfg.type or "binary"]
                 }
             }
@@ -219,6 +219,35 @@ function CC:target(name)
 
         return mk
     end
+end
+
+function CC:override_implicits()
+    local function mq(...)
+        if self.quiet then
+            return quiet(...)
+        else
+            return ...
+        end
+    end
+
+    return {
+        epine.prule {
+            patterns = {"%.o"},
+            prerequisites = {"%.c"},
+            recipe = {
+                self.oncompile("$@", "$<", "C") or {},
+                mq("$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<")
+            }
+        },
+        epine.prule {
+            patterns = {"%.o"},
+            prerequisites = {"%.cpp"},
+            recipe = {
+                self.oncompile("$@", "$<", "C++") or {},
+                mq("$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<")
+            }
+        }
+    }
 end
 
 --< shortcut for static library targets >--
@@ -248,6 +277,11 @@ end
 --< a global instance >--
 local cc = CC()
 
+--< give a way to create new instances! >--
+function cc.new()
+    return CC()
+end
+
 --< forward CC:binary >--
 function cc.binary(...)
     return CC.binary(cc, ...)
@@ -263,9 +297,9 @@ function cc.static(...)
     return CC.static(cc, ...)
 end
 
---< give a way to create new instances! >--
-function cc.new()
-    return CC()
+--< forward CC:override_implicits >--
+function cc.override_implicits(...)
+    return CC.override_implicits(cc, ...)
 end
 
 return cc

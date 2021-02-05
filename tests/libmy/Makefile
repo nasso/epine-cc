@@ -18,7 +18,8 @@ libmy.a: CFLAGS += -Wall
 libmy.a: CFLAGS += -Wextra
 libmy.a: CFLAGS += -pedantic
 libmy.a: $(libmy_a_OBJS)
-	$(AR) rc $@ $(libmy_a_OBJS)
+	@echo [static] $^ '->' $@
+	@$(AR) rc $@ $(libmy_a_OBJS)
 -include $(libmy_a_DEPS)
 
 libmy_so_SRCS := ./src/my_putstr.c ./src/my_printf.c
@@ -40,7 +41,8 @@ libmy.so: LDLIBS :=
 libmy.so: LDFLAGS :=
 libmy.so: LDFLAGS += -shared
 libmy.so: $(libmy_so_OBJS)
-	$(CC) -o $@ $(libmy_so_OBJS) $(LDFLAGS) $(LDLIBS)
+	@echo [shared] $^ '->' $@
+	@$(CC) -o $@ $(libmy_so_OBJS) $(LDFLAGS) $(LDLIBS)
 -include $(libmy_so_DEPS)
 
 unit_tests_SRCS := tests/test.c
@@ -59,20 +61,28 @@ unit_tests: LDLIBS += -lcriterion
 unit_tests: LDFLAGS :=
 unit_tests: LDFLAGS += -L.
 unit_tests: $(unit_tests_OBJS)
-	$(CC) -o $@ $(unit_tests_OBJS) $(LDFLAGS) $(LDLIBS)
+	@echo [binary] $^ '->' $@
+	@$(CC) -o $@ $(unit_tests_OBJS) $(LDFLAGS) $(LDLIBS)
 -include $(unit_tests_DEPS)
+
+%.o: %.c
+	@echo [C] $< '->' $@
+	@$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+%.o: %.cpp
+	@echo [C++] $< '->' $@
+	@$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 tests_run: unit_tests
 	./unit_tests
 .PHONY: tests_run
 
 clean:
-	$(RM) $(libmy_a_DEPS) $(libmy_a_OBJS) $(libmy_so_DEPS) $(libmy_so_OBJS) $(unit_tests_DEPS) $(unit_tests_OBJS)
+	@$(RM) $(libmy_a_DEPS) $(libmy_a_OBJS) $(libmy_so_DEPS) $(libmy_so_OBJS) $(unit_tests_DEPS) $(unit_tests_OBJS)
 .PHONY: clean
 
 fclean:
-	$(RM) $(libmy_a_DEPS) $(libmy_a_OBJS) $(libmy_so_DEPS) $(libmy_so_OBJS) $(unit_tests_DEPS) $(unit_tests_OBJS)
-	$(RM) libmy.a libmy.so unit_tests
+	@$(RM) $(libmy_a_DEPS) $(libmy_a_OBJS) $(libmy_so_DEPS) $(libmy_so_OBJS) $(unit_tests_DEPS) $(unit_tests_OBJS)
+	@$(RM) libmy.a libmy.so unit_tests
 .PHONY: fclean
 
 re: fclean all

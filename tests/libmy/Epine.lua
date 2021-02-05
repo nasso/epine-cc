@@ -1,5 +1,15 @@
 local cc = require "../../init"
 
+cc.quiet = true
+
+function cc.oncompile(dst, src, lang)
+    return echo("[" .. lang .. "] " .. src .. " '->' " .. dst)
+end
+
+function cc.onlink(dst, src, type)
+    return echo("[" .. type .. "] " .. src .. " '->' " .. dst)
+end
+
 local libmy_cfg = {
     srcs = {"./src/my_putstr.c", "./src/my_printf.c"},
     cppflags = {
@@ -37,18 +47,20 @@ return {
         ldflags = {"-L."}
     },
     epine.br,
+    cc.override_implicits(),
+    epine.br,
     action "tests_run" {
         prerequisites = {"unit_tests"},
         "./unit_tests"
     },
     epine.br,
     action "clean" {
-        rm(cc.cleanlist)
+        quiet(rm(cc.cleanlist))
     },
     epine.br,
     action "fclean" {
-        rm(cc.cleanlist),
-        rm("libmy.a", "libmy.so", "unit_tests")
+        quiet(rm(cc.cleanlist)),
+        quiet(rm("libmy.a", "libmy.so", "unit_tests"))
     },
     epine.br,
     action "re" {
